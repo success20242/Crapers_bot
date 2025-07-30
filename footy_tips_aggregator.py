@@ -4,6 +4,7 @@ import time
 import logging
 import requests
 import json
+import pathlib
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -15,6 +16,10 @@ from telethon.sync import TelegramClient
 load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or 'YOUR_BOT_TOKEN'
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or 'YOUR_CHAT_ID'
+
+# === Environment Variable Check ===
+if TELEGRAM_BOT_TOKEN == 'YOUR_BOT_TOKEN' or TELEGRAM_CHAT_ID == 'YOUR_CHAT_ID':
+    logging.warning("⚠️ Please set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in your environment or .env file!")
 
 # === Telegram Scraper API Credentials ===
 api_id = 21993597
@@ -69,18 +74,21 @@ def extract_predictions(text):
     pattern = r'(?:\d{1,2}:\d{2})?\s?[A-Za-z\s]+\s+vs\s+[A-Za-z\s]+.*?(?:Over|Under|BTTS|Win|Draw|Handicap|Correct Score).*'
     return re.findall(pattern, text, re.IGNORECASE)
 
-# === Telegram Prediction Scraper with date filter (today only) ===
+# === Telegram Prediction Scraper with exception handling per channel and date filter (today only) ===
 def get_telegram_predictions():
     results = []
     today = datetime.now(timezone.utc).date()
     with TelegramClient('session_name', api_id, api_hash) as client:
         for channel in telegram_channels:
-            for message in client.iter_messages(channel, limit=100):
-                if message.date.date() == today and message.text:
-                    picks = extract_predictions(message.text)
-                    for p in picks:
-                        score = sum(KEYWORDS[k] for k in KEYWORDS if k in p.lower())
-                        results.append((p.strip(), score))
+            try:
+                for message in client.iter_messages(channel, limit=100):
+                    if message.date.date() == today and message.text:
+                        picks = extract_predictions(message.text)
+                        for p in picks:
+                            score = sum(KEYWORDS[k] for k in KEYWORDS if k in p.lower())
+                            results.append((p.strip(), score))
+            except Exception as e:
+                logging.warning(f"Failed to fetch messages from {channel}: {e}")
     return results
 
 # === Forum/Blog Scraper via Playwright ===
@@ -106,6 +114,9 @@ def scrape_blog_predictions(url):
         logging.warning(f"❌ Error scraping {url}: {e}")
     return predictions
 
+# === Configurable top predictions count ===
+TOP_PREDICTIONS_LIMIT = 30
+
 # === Collect All Predictions (with cleaning integrated) ===
 def collect_all_predictions():
     combined_predictions = []
@@ -129,12 +140,13 @@ def collect_all_predictions():
             seen.add(text)
             unique.append((text, score))
 
-    # Sort by score descending and limit to top 30
-    return sorted(unique, key=lambda x: x[1], reverse=True)[:30]
+    # Sort by score descending and limit to top N
+    return sorted(unique, key=lambda x: x[1], reverse=True)[:TOP_PREDICTIONS_LIMIT]
 
-# === Save predictions to JSON file ===
+# === Save predictions to JSON file in 'data/' folder ===
 def save_predictions_to_file(predictions, filename=None):
-    filename = filename or f"predictions_{datetime.now().strftime('%Y%m%d')}.json"
+    pathlib.Path("data").mkdir(exist_ok=True)
+    filename = filename or f"data/predictions_{datetime.now().strftime('%Y%m%d')}.json"
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump([{'text': text, 'score': score} for text, score in predictions], f, indent=2, ensure_ascii=False)
     logging.info(f"💾 Saved predictions to {filename}")
