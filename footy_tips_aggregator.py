@@ -30,10 +30,13 @@ logging.basicConfig(level=logging.INFO)
 
 # === Telegram Channels ===
 telegram_channels = [
-    '@BettingTipsVIP',
-    '@FixedMatchesHQ',
-    '@SureOddsDaily',
-    '@FreeDailyBettingTips'
+    '@FreeDailyBettingTips',
+    '@aimbetofficial',
+    '@LoyalTipsters02',
+    '@Suretips_01',
+    '@Andison345',
+    '@EPOddsSupportBot',
+    '@epPay_afterbot'
 ]
 
 # === Blog/Forum URLs ===
