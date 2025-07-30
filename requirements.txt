@@ -1,6 +1,7 @@
-telethon            # For Telegram client scraping messages from channels
-playwright          # For headless browser scraping of dynamic websites (blogs/forums)
-beautifulsoup4      # For parsing HTML content scraped via playwright or requests
-python-dotenv       # For loading environment variables from .env file
-requests            # For sending HTTP requests (posting to Telegram bot API)
-python-telegram-bot # Optional: for easier Telegram bot integration (if used)
+telethon==1.29.2            # For Telegram client scraping messages from channels
+playwright==1.38.0          # For headless browser scraping of dynamic websites (blogs/forums)
+beautifulsoup4==4.12.2      # For parsing HTML content scraped via playwright or requests
+python-dotenv==1.0.0        # For loading environment variables from .env file
+requests==2.31.0            # For sending HTTP requests (posting to Telegram bot API)
+python-telegram-bot         # Optional: for easier Telegram bot integration (if used)
+telegram==0.0.1             # (Optional if you are only using telethon for Telegram API)
