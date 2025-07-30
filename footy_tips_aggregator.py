@@ -106,7 +106,7 @@ def scrape_blog_predictions(url):
         logging.warning(f"❌ Error scraping {url}: {e}")
     return predictions
 
-# === Collect All Predictions ===
+# === Collect All Predictions (with cleaning integrated) ===
 def collect_all_predictions():
     combined_predictions = []
 
@@ -121,14 +121,15 @@ def collect_all_predictions():
     telegram_preds = get_telegram_predictions()
     combined_predictions.extend(telegram_preds)
 
-    # Remove duplicates by text content
+    # Clean predictions: deduplicate and filter by length
     seen = set()
     unique = []
     for text, score in combined_predictions:
-        if text not in seen:
+        if text not in seen and 10 < len(text) < 400:
             seen.add(text)
             unique.append((text, score))
 
+    # Sort by score descending and limit to top 30
     return sorted(unique, key=lambda x: x[1], reverse=True)[:30]
 
 # === Save predictions to JSON file ===
