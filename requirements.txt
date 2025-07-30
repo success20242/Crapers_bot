@@ -1,7 +1,6 @@
-telethon
-playwright
-beautifulsoup4
-google-api-python-client
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
+telethon            # For Telegram client scraping messages from channels
+playwright          # For headless browser scraping of dynamic websites (blogs/forums)
+beautifulsoup4      # For parsing HTML content scraped via playwright or requests
+python-dotenv       # For loading environment variables from .env file
+requests            # For sending HTTP requests (posting to Telegram bot API)
+python-telegram-bot # Optional: for easier Telegram bot integration (if used)
