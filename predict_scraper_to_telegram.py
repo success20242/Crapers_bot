@@ -1,27 +1,56 @@
-from playwright.sync_api import sync_playwright
-from bs4 import BeautifulSoup
-import requests
+import re
+import os
 import time
+import logging
+import requests
+import json
+from bs4 import BeautifulSoup
+from datetime import datetime, timezone
+from dotenv import load_dotenv
+from playwright.sync_api import sync_playwright
+from telegram import Bot
+from telethon.sync import TelegramClient
 
-# === CONFIGURATION ===
-BLOG_URLS = [
-        "https://betensured.com/predictions",
-        "https://www.sportybetpredict.com/",
-        "https://www.surebet247.com/blog",
-        "https://www.soccerpunter.com/",
-        "https://www.bettingtips1x2.com/",
-        "https://www.freesupertips.com/football-predictions/",
-        "https://www.windrawwin.com/",
-        "https://www.betloy.com/predictions",
-        "https://tips180.com/",
-        "https://betimate.com/",
-        "https://www.zulubet.com/",
-        "https://www.forebet.com/",
-        "https://www.betfame.com/tips/",
-        "https://www.bettingclosed.com/predictions",
-        "https://www.vitibet.com/"
+# === Load Environment Variables ===
+load_dotenv()
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or 'YOUR_BOT_TOKEN'
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or 'YOUR_CHAT_ID'
+
+# === Telegram Scraper API Credentials ===
+api_id = 21993597
+api_hash = '3648f9e2efb3e88365a954ecbbf987c5'
+
+# === Logging ===
+logging.basicConfig(level=logging.INFO)
+
+# === Telegram Channels ===
+telegram_channels = [
+    '@BettingTipsVIP',
+    '@FixedMatchesHQ',
+    '@SureOddsDaily',
+    '@FreeDailyBettingTips'
 ]
 
+# === Blog/Forum URLs ===
+blog_urls = [
+    "https://betensured.com/predictions",
+    "https://www.sportybetpredict.com/",
+    "https://www.surebet247.com/blog",
+    "https://www.soccerpunter.com/",
+    "https://www.bettingtips1x2.com/",
+    "https://www.freesupertips.com/football-predictions/",
+    "https://www.windrawwin.com/",
+    "https://www.betloy.com/predictions",
+    "https://tips180.com/",
+    "https://betimate.com/",
+    "https://www.zulubet.com/",
+    "https://www.forebet.com/",
+    "https://www.betfame.com/tips/",
+    "https://www.bettingclosed.com/predictions",
+    "https://www.vitibet.com/"
+]
+
+# === Keywords with Scoring ===
 KEYWORDS = {
     'correct score': 3,
     'over': 2,
@@ -30,26 +59,43 @@ KEYWORDS = {
     'goal': 1,
     'draw': 1,
     'home': 1,
-    'away': 1
+    'away': 1,
+    'win': 1,
+    'handicap': 2
 }
 
-TELEGRAM_BOT_TOKEN = 'YOUR_BOT_TOKEN'
-TELEGRAM_CHAT_ID = 'YOUR_CHAT_ID'
+# === Pattern Extractor (for Telegram text) ===
+def extract_predictions(text):
+    pattern = r'(?:\d{1,2}:\d{2})?\s?[A-Za-z\s]+\s+vs\s+[A-Za-z\s]+.*?(?:Over|Under|BTTS|Win|Draw|Handicap|Correct Score).*'
+    return re.findall(pattern, text, re.IGNORECASE)
 
-# === SCRAPER ===
-def scrape_predictions(url):
+# === Telegram Prediction Scraper with date filter (today only) ===
+def get_telegram_predictions():
+    results = []
+    today = datetime.now(timezone.utc).date()
+    with TelegramClient('session_name', api_id, api_hash) as client:
+        for channel in telegram_channels:
+            for message in client.iter_messages(channel, limit=100):
+                if message.date.date() == today and message.text:
+                    picks = extract_predictions(message.text)
+                    for p in picks:
+                        score = sum(KEYWORDS[k] for k in KEYWORDS if k in p.lower())
+                        results.append((p.strip(), score))
+    return results
+
+# === Forum/Blog Scraper via Playwright ===
+def scrape_blog_predictions(url):
     predictions = []
-
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
             page.goto(url, timeout=60000)
+            page.wait_for_timeout(3000)
             content = page.content()
             browser.close()
 
         soup = BeautifulSoup(content, 'html.parser')
-
         for tag in soup.find_all(['p', 'div', 'span']):
             text = tag.get_text().strip()
             if any(k in text.lower() for k in KEYWORDS):
@@ -57,25 +103,50 @@ def scrape_predictions(url):
                 predictions.append((text, score))
 
     except Exception as e:
-        print(f"Error scraping {url}: {e}")
-
+        logging.warning(f"❌ Error scraping {url}: {e}")
     return predictions
 
-# === FORMAT + POST ===
-def format_predictions(predictions_by_site):
-    message = f"📊 *Today’s Football Predictions*\n\n"
+# === Collect All Predictions ===
+def collect_all_predictions():
+    combined_predictions = []
 
-    for site, preds in predictions_by_site.items():
-        message += f"🌐 *{site}*\n"
-        if preds:
-            for text, score in sorted(preds, key=lambda x: x[1], reverse=True)[:5]:
-                message += f"🔹 _({score})_ {text}\n"
-        else:
-            message += "❌ No valid predictions found.\n"
-        message += "\n"
+    logging.info("📥 Scraping blog/forum URLs...")
+    for url in blog_urls:
+        logging.info(f"🔗 {url}")
+        site_preds = scrape_blog_predictions(url)
+        combined_predictions.extend(site_preds)
+        time.sleep(2)
 
-    return message
+    logging.info("📥 Scraping Telegram channels...")
+    telegram_preds = get_telegram_predictions()
+    combined_predictions.extend(telegram_preds)
 
+    # Remove duplicates by text content
+    seen = set()
+    unique = []
+    for text, score in combined_predictions:
+        if text not in seen:
+            seen.add(text)
+            unique.append((text, score))
+
+    return sorted(unique, key=lambda x: x[1], reverse=True)[:30]
+
+# === Save predictions to JSON file ===
+def save_predictions_to_file(predictions, filename=None):
+    filename = filename or f"predictions_{datetime.now().strftime('%Y%m%d')}.json"
+    with open(filename, 'w', encoding='utf-8') as f:
+        json.dump([{'text': text, 'score': score} for text, score in predictions], f, indent=2, ensure_ascii=False)
+    logging.info(f"💾 Saved predictions to {filename}")
+
+# === Format for Telegram Post ===
+def format_for_telegram(predictions):
+    header = f"📊 *Top Football Predictions - {datetime.now().strftime('%b %d')}*\n\n"
+    body = ""
+    for i, (text, score) in enumerate(predictions, 1):
+        body += f"{i}. _({score})_ {text}\n"
+    return header + body
+
+# === Post to Telegram ===
 def post_to_telegram(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
@@ -85,24 +156,20 @@ def post_to_telegram(message):
     }
     try:
         res = requests.post(url, json=payload)
-        print(f"Telegram Response: {res.status_code}")
+        logging.info(f"📤 Posted to Telegram. Status: {res.status_code}")
     except Exception as e:
-        print(f"Telegram post failed: {e}")
+        logging.error(f"❌ Telegram post failed: {e}")
 
-# === MAIN ===
-if __name__ == "__main__":
-    all_predictions = {}
-
-    for url in BLOG_URLS:
-        print(f"Scraping: {url}")
-        preds = scrape_predictions(url)
-        domain = url.split("//")[-1].split("/")[0]
-        all_predictions[domain] = preds
-        time.sleep(3)  # polite delay between sites
-
+# === MAIN RUNNER ===
+def run_automation():
+    all_predictions = collect_all_predictions()
     if all_predictions:
-        message = format_predictions(all_predictions)
-        print("\nPosting to Telegram...\n")
+        save_predictions_to_file(all_predictions)
+        message = format_for_telegram(all_predictions)
         post_to_telegram(message)
     else:
-        print("No predictions gathered.")
+        logging.info("No predictions collected.")
+
+# === EXECUTE ===
+if __name__ == '__main__':
+    run_automation()
