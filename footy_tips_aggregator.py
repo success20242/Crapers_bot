@@ -75,7 +75,12 @@ KEYWORDS = {
 PREDICTION_PATTERN = re.compile(r'(over|under|btts|draw|win|handicap|gg|ng|1x|x2|12|correct score|1|x|2)', re.IGNORECASE)
 
 def extract_predictions(text):
-    return re.findall(PREDICTION_PATTERN, text)
+    has_tip = bool(re.search(PREDICTION_PATTERN, text))
+    has_teams = len(re.findall(r'\b[A-Z][a-z]{2,}(?:\s[A-Z][a-z]{2,})?\b', text)) >= 2
+    return has_tip and has_teams
+
+def looks_like_match_line(text):
+    return any(sep in text.lower() for sep in [' vs ', ' - ', ' v ', ' @ '])
 
 def get_telegram_predictions():
     results = []
@@ -89,7 +94,7 @@ def get_telegram_predictions():
                     continue
                 for message in client.iter_messages(channel, limit=100):
                     if message.date.date() == today and message.text:
-                        if extract_predictions(message.text):
+                        if extract_predictions(message.text) and looks_like_match_line(message.text):
                             score = sum(KEYWORDS[k] for k in KEYWORDS if k in message.text.lower())
                             results.append((message.text.strip(), score))
             except Exception as e:
@@ -110,7 +115,7 @@ def scrape_blog_predictions(url):
         soup = BeautifulSoup(content, 'html.parser')
         for tag in soup.find_all(['p', 'div', 'span', 'li']):
             text = tag.get_text().strip()
-            if len(text) > 10 and extract_predictions(text):
+            if len(text) > 10 and extract_predictions(text) and looks_like_match_line(text):
                 score = sum(KEYWORDS[k] for k in KEYWORDS if k in text.lower())
                 predictions.append((text, score))
 
